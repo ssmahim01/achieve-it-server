@@ -1,13 +1,36 @@
-const express = require('express');
-const cors = require('cors');
 const { MongoClient, ServerApiVersion } = require('mongodb');
 require('dotenv').config();
+const express = require('express');
+const cors = require('cors');
+const jwt = require('jsonwebtoken');
+const cookieParser = require('cookie-parser');
 
 const port = process.env.PORT || 5000;
 const app = express();
 
-app.use(cors());
+app.use(cors({
+  origin: ['http://localhost:5173'],
+  credentials: true
+}));
 app.use(express.json());
+app.use(cookieParser());
+
+const verifyToken = (req, res, next) => {
+  const token = req.cookies?.token;
+
+  if(!token){
+    return res.status(401).send({message: "Unauthorized access"})
+  }
+
+  jwt.verify(token, process.env.SECRET_ACCESS_JWT, (err, decoded) => {
+    if(err){
+      return res.status(401).send({message: "Unauthorized access"})
+    }
+
+    req.user = decoded;
+    next();
+  })
+};
 
 const uri = `mongodb+srv://${process.env.DB_USERNAME}:${process.env.DB_PASSWORD}@cluster0.ybs8l.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
 
@@ -34,6 +57,25 @@ async function run() {
         const findAll = courseCollection.find();
         const result = await findAll.toArray();
         res.send(result);
+    });
+
+    app.post("/jwt-access", (req, res) => {
+      const user = req.body;
+      const token = jwt.sign(user, process.env.SECRET_ACCESS_JWT, {expiresIn: '2h'});
+
+      res.cookie('token', token, {
+        httpOnly: true,
+        secure: false
+      })
+      .send({success: true})
+    });
+
+    app.post("/log-out", (req, res) => {
+      res.clearCookie('token', {
+        httpOnly: true,
+        secure: false
+      })
+      .send({success: true})
     });
 
     app.post("/add-course", async(req, res) => {
