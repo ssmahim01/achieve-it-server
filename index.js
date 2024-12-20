@@ -19,6 +19,7 @@ app.use(cookieParser());
 
 const verifyToken = (req, res, next) => {
   const token = req.cookies?.token;
+  console.log(token);
 
   if (!token) {
     return res.status(401).send({ message: "Unauthorized access" });
@@ -64,10 +65,24 @@ async function run() {
       res.send(result);
     });
 
-    app.get("/course/:id", async(req, res) => {
+    app.get("/course/:id", async (req, res) => {
       const id = req.params.id;
-      const query = {_id: new ObjectId(id)};
+      const query = { _id: new ObjectId(id) };
       const result = await courseCollection.findOne(query);
+      res.send(result);
+    });
+
+    app.get("/courses/:email", verifyToken, async (req, res) => {
+      const email = req.params.email;
+      const decoded = req.user?.email;
+
+      if (email !== decoded) {
+        return res.status(401).send({ message: "Unauthorized access" });
+      }
+
+      let query = { "poster.email": email };
+
+      const result = await courseCollection.find(query).toArray();
       res.send(result);
     });
 
@@ -78,17 +93,17 @@ async function run() {
 
       let query = {};
       let options = {};
-      
-      if(filter){
+
+      if (filter) {
         query.category = filter;
       }
 
-      if(search){
-        query = {course_title: {$regex: search, $options: "i"}}
+      if (search) {
+        query = { course_title: { $regex: search, $options: "i" } };
       }
 
-      if(sort){
-        options = {sort: {deadline: sort === "asc" ? 1: -1}};
+      if (sort) {
+        options = { sort: { deadline: sort === "asc" ? 1 : -1 } };
       }
 
       const findResult = await courseCollection.find(query, options).toArray();
@@ -125,30 +140,59 @@ async function run() {
       res.send(result);
     });
 
-    app.get("/my-bids", verifyToken, async(req, res) => {
-      const poster = req.query?.poster;
-      const email = req.query.email;
+    app.delete("/course/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+
+      const deleteResult = await courseCollection.deleteOne(query);
+      res.send(deleteResult);
+    });
+
+    app.put("/update-course/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const courseData = req.body;
+
+      const options = { upsert: true };
+      const updateData = {
+        $set: courseData,
+      };
+
+      const updateResult = await courseCollection.updateOne(query, updateData, options);
+
+      res.send(updateResult);
+    });
+
+    // Bids related APIs
+
+    app.get("/bids", verifyToken, async (req, res) => {
+      const poster = req.query.posterEmail;
       const userEmail = req.user?.email;
 
-      if(email !== userEmail){
-        return res.status(401).send({message: "Unauthorized Access"});
-      };
+      if (poster !== userEmail) {
+        return res.status(401).send({ message: "Unauthorized Access" });
+      }
 
       let query = {};
 
-      if(poster){
-        query.poster = email;
-      }else{
-        query.email = email;
-      };
+      if (poster) {
+        query.posterEmail = poster;
+      }
 
       const result = await bidCollection.find(query).toArray();
       res.send(result);
     });
 
-    app.get("/bids", async (req, res) => {
-      const findAll = bidCollection.find();
-      const result = await findAll.toArray();
+    app.get("/my-bids/:email", verifyToken, async (req, res) => {
+      const email = req.params.email;
+      const userEmail = req.user?.email;
+      let query = { email };
+
+      if (email !== userEmail) {
+        return res.status(401).send({ message: "Unauthorized Access" });
+      }
+
+      const result = await bidCollection.find(query).toArray();
       res.send(result);
     });
 
@@ -158,19 +202,18 @@ async function run() {
       res.send(result);
     });
 
-    app.patch("/bid-status/:id", async(req, res) => {
+    app.patch("/bid-status/:id", async (req, res) => {
       const id = req.params.id;
-      const {status} = req.body;
-      const filter = {_id: new ObjectId(id)};
+      const { status } = req.body;
+      const filter = { _id: new ObjectId(id) };
 
       const statusUpdate = {
-        $set: {status}
+        $set: { status },
       };
 
       const updateResult = await bidCollection.updateOne(filter, statusUpdate);
       res.send(updateResult);
     });
-
   } finally {
     // Ensures that the client will close when you finish/error
     // await client.close();
