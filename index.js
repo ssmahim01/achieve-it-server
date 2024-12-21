@@ -10,7 +10,11 @@ const app = express();
 
 app.use(
   cors({
-    origin: ["http://localhost:5173"],
+    origin: [
+      "http://localhost:5173",
+      "https://auth-connections.web.app",
+      "https://achieve-it.surge.sh"
+      ],
     credentials: true,
   })
 );
@@ -19,7 +23,7 @@ app.use(cookieParser());
 
 const verifyToken = (req, res, next) => {
   const token = req.cookies?.token;
-  console.log(token);
+  // console.log(token);
 
   if (!token) {
     return res.status(401).send({ message: "Unauthorized access" });
@@ -49,12 +53,12 @@ const client = new MongoClient(uri, {
 async function run() {
   try {
     // Connect the client to the server	(optional starting in v4.7)
-    await client.connect();
-    // Send a ping to confirm a successful connection
-    await client.db("admin").command({ ping: 1 });
-    console.log(
-      "Pinged your deployment. You successfully connected to MongoDB!"
-    );
+    // await client.connect();
+    // // Send a ping to confirm a successful connection
+    // await client.db("admin").command({ ping: 1 });
+    // console.log(
+    //   "Pinged your deployment. You successfully connected to MongoDB!"
+    // );
 
     const courseCollection = client.db("coursesDB").collection("courses");
     const bidCollection = client.db("coursesDB").collection("bids");
@@ -119,7 +123,8 @@ async function run() {
       res
         .cookie("token", token, {
           httpOnly: true,
-          secure: false,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict',
         })
         .send({ success: true });
     });
@@ -128,7 +133,8 @@ async function run() {
       res
         .clearCookie("token", {
           httpOnly: true,
-          secure: false,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict',
         })
         .send({ success: true });
     });
@@ -158,7 +164,11 @@ async function run() {
         $set: courseData,
       };
 
-      const updateResult = await courseCollection.updateOne(query, updateData, options);
+      const updateResult = await courseCollection.updateOne(
+        query,
+        updateData,
+        options
+      );
 
       res.send(updateResult);
     });
@@ -197,9 +207,29 @@ async function run() {
     });
 
     app.post("/add-bid", async (req, res) => {
-      const newBid = req.body;
-      const result = await bidCollection.insertOne(newBid);
-      res.send(result);
+      const bid = req.body;
+      const insertResult = await bidCollection.insertOne(bid);
+
+      const id = bid.courseId;
+      const query = { _id: new ObjectId(id) };
+
+      const course = await courseCollection.findOne(query);
+      let newCount = 0;
+
+      if (course?.bidCount) {
+        newCount = course.bidCount + 1;
+      } else {
+        newCount = 1;
+      }
+
+      const filter = { _id: new ObjectId(id) };
+      const updatedCount = { $set: { bidCount: newCount } };
+      const updateResult = await courseCollection.updateOne(
+        filter,
+        updatedCount
+      );
+
+      res.send(insertResult);
     });
 
     app.patch("/bid-status/:id", async (req, res) => {
